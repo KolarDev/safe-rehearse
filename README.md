@@ -47,7 +47,7 @@ safe-rehearse/
 
 ## Prerequisites
 
-- **Node.js** ≥ 22.12. Node 22.22+ or 24 LTS is recommended, because `@nestjs/schematics` declares `^22.22.3 || ^24.15.0`.
+- **Node.js** `^22.22.3` or `>=24.15.0` (see `.nvmrc`). `engine-strict` is on, so `pnpm install` fails on older versions.
 - **pnpm** 10. Run `corepack enable` to use the version pinned in `package.json`.
 - PostgreSQL and Redis are **not required yet**. Nothing connects to them in Phase 0.
 
