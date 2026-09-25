@@ -1,0 +1,29 @@
+{
+  "name": "safe-rehearse",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SafeRehearse — AI learning and practice platform for frontline social-care training.",
+  "packageManager": "pnpm@10.23.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:validate": "prisma validate",
+    "db:format": "prisma format",
+    "db:generate": "prisma generate"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.6",
+    "dotenv": "^18.0.4",
+    "prettier": "^3.9.9",
+    "prisma": "7.10.0",
+    "turbo": "^2.11.4",
+    "typescript": "~6.0.3"
+  }
+}

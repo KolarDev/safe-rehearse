@@ -1,0 +1,17 @@
+// SafeRehearse Prisma schema.
+//
+// Phase 0: generator + datasource only. No application models yet — the data
+// model (stages, stage attempts, assessment criteria, ...) will be designed in
+// a later phase. See docs/architecture.md.
+//
+// PostgreSQL will later use the `pgvector` extension for training-content
+// retrieval. Enable it alongside the first migration that needs it.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../apps/api/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
