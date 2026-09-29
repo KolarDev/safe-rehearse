@@ -1,0 +1,30 @@
+{
+  "name": "voice-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SafeRehearse voice-agent runtime (LiveKit Agents). Replaceable infrastructure: it talks to the backend only through @safe-rehearse/agent-contracts.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts dev",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js start",
+    "simulate": "tsx src/mock/simulate.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.9.1",
+    "@livekit/agents-plugin-google": "^1.9.1",
+    "@safe-rehearse/agent-contracts": "workspace:*",
+    "@safe-rehearse/types": "workspace:*",
+    "dotenv": "^18.0.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@safe-rehearse/config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.11.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.2"
+  }
+}

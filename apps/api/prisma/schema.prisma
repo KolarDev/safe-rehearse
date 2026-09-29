@@ -1,0 +1,160 @@
+// SafeRehearse data model. The backend (apps/api) is the only owner of this database.
+// See docs/architecture.md for the principles these models encode.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+  previewFeatures     = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  // pgvector backs future training-content retrieval. No vector columns yet:
+  // their dimension depends on the embedding model, which is not chosen.
+  extensions = [vector]
+}
+
+// ─── Course content (expert-authored) ────────────────────────────────────────
+
+model Scenario {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String?
+  stages      Stage[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// The atomic learning unit: Teacher → Practice Partner → Examiner → Result.
+model Stage {
+  id                   String                @id @default(cuid())
+  scenarioId           String
+  scenario             Scenario              @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  position             Int
+  title                String
+  learningObjectives   String[]
+  teacherInstructions  String
+  practiceInstructions String
+  examinerInstructions String
+  criteria             AssessmentCriterion[]
+  knowledge            KnowledgeChunk[]
+  attempts             StageAttempt[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@unique([scenarioId, position])
+}
+
+/// Predefined, expert-authored. The backend applies these rules; the AI only supplies evidence.
+model AssessmentCriterion {
+  id            String            @id @default(cuid())
+  stageId       String
+  stage         Stage             @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  /// Stable, readable identifier shared with the agent (e.g. "recognises-safeguarding-concern").
+  key           String
+  description   String
+  position      Int
+  /// A required criterion must be met to pass.
+  required      Boolean           @default(true)
+  /// Minimum model confidence for a piece of evidence to count toward this criterion.
+  minConfidence Float             @default(0.7)
+  evidence      Evidence[]
+  results       CriterionResult[]
+
+  @@unique([stageId, key])
+}
+
+/// Training material served to the agent as context. Will gain a pgvector embedding later.
+model KnowledgeChunk {
+  id        String   @id @default(cuid())
+  stageId   String
+  stage     Stage    @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  position  Int
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+// ─── Learner activity ─────────────────────────────────────────────────────────
+
+enum StageMode {
+  TEACHER
+  PRACTICE_PARTNER
+  EXAMINER
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  DROPPED
+  PASSED
+  FAILED
+}
+
+/// One execution of a stage. Retry always creates a new attempt; nothing carries over.
+model StageAttempt {
+  id                   String            @id @default(cuid())
+  stageId              String
+  stage                Stage             @relation(fields: [stageId], references: [id])
+  /// Temporary learner identifier until authentication exists.
+  learnerRef           String
+  status               AttemptStatus     @default(IN_PROGRESS)
+  mode                 StageMode         @default(TEACHER)
+  startedAt            DateTime          @default(now())
+  endedAt              DateTime?
+  /// Why the attempt ended (e.g. "participant_left", "superseded", "graded").
+  endReason            String?
+  /// Set when the one voice session for this attempt is issued. A lost session is
+  /// never resumed: the attempt drops and the learner retries with a new attempt.
+  voiceSessionIssuedAt DateTime?
+  teacherCompletedAt   DateTime?
+  practiceCompletedAt  DateTime?
+  examinerCompletedAt  DateTime?
+  events               AgentEvent[]
+  evidence             Evidence[]
+  results              CriterionResult[]
+
+  @@index([learnerRef, stageId])
+}
+
+/// Append-only log of every event the agent sent, accepted or not. `id` is the
+/// agent's eventId, which makes delivery idempotent.
+model AgentEvent {
+  id              String       @id
+  attemptId       String
+  attempt         StageAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type            String
+  payload         Json
+  accepted        Boolean
+  rejectionReason String?
+  occurredAt      DateTime
+  receivedAt      DateTime     @default(now())
+
+  @@index([attemptId, occurredAt])
+}
+
+model Evidence {
+  id          String              @id @default(cuid())
+  attemptId   String
+  attempt     StageAttempt        @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  criterionId String
+  criterion   AssessmentCriterion @relation(fields: [criterionId], references: [id])
+  mode        StageMode
+  text        String
+  confidence  Float
+  occurredAt  DateTime
+}
+
+/// The backend's per-criterion verdict, written once when the attempt is graded.
+model CriterionResult {
+  id          String              @id @default(cuid())
+  attemptId   String
+  attempt     StageAttempt        @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  criterionId String
+  criterion   AssessmentCriterion @relation(fields: [criterionId], references: [id])
+  met         Boolean
+
+  @@unique([attemptId, criterionId])
+}

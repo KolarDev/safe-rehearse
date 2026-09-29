@@ -1,8 +1,4 @@
 {
   "extends": "./packages/config/typescript/base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "types": ["node"]
-  },
-  "include": ["prisma.config.ts"]
+  "files": []
 }

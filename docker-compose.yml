@@ -1,0 +1,35 @@
+# Local development infrastructure. Not for production.
+#   docker compose up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: saferehearse
+      POSTGRES_PASSWORD: saferehearse
+      POSTGRES_DB: safe_rehearse
+    ports:
+      - '55432:5432' # non-default host port avoids clashing with other local Postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U saferehearse -d safe_rehearse']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '16379:6379' # non-default host port avoids clashing with other local Redis
+
+  # LiveKit in --dev mode uses the fixed credentials devkey / secret.
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --dev --bind 0.0.0.0 --node-ip 127.0.0.1
+    ports:
+      - '7880:7880'
+      - '7881:7881'
+      - '7882:7882/udp'
+
+volumes:
+  postgres-data:

@@ -1,0 +1,31 @@
+{
+  "name": "@safe-rehearse/agent-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The contract between the voice-agent runtime and the SafeRehearse backend. Every voice provider speaks this language.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@safe-rehearse/config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.11.0",
+    "typescript": "~6.0.2"
+  }
+}

@@ -11,10 +11,13 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@livekit/components-react": "^2.9.24",
     "@safe-rehearse/types": "workspace:*",
+    "livekit-client": "^2.22.3",
     "next": "16.3.6",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@next/env": "16.3.6",

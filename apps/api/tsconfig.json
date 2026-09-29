@@ -2,7 +2,6 @@
   "extends": "@safe-rehearse/config/typescript/node.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
     "declaration": false,
     "declarationMap": false,
     "removeComments": true,
@@ -11,5 +10,5 @@
     "strictPropertyInitialization": false,
     "incremental": true
   },
-  "include": ["src"]
+  "include": ["src", "prisma", "prisma.config.ts"]
 }

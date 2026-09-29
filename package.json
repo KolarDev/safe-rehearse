@@ -8,21 +8,26 @@
     "node": "^22.22.3 || >=24.15.0"
   },
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --continue",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "simulate": "pnpm --filter voice-agent simulate",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:validate": "prisma validate",
-    "db:format": "prisma format",
-    "db:generate": "prisma generate"
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "db:migrate": "pnpm --filter api db:migrate",
+    "db:seed": "pnpm --filter api db:seed",
+    "db:generate": "pnpm --filter api db:generate",
+    "db:studio": "pnpm --filter api db:studio",
+    "db:validate": "pnpm --filter api db:validate",
+    "db:format": "pnpm --filter api db:format"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",
-    "dotenv": "^18.0.4",
     "prettier": "^3.9.9",
-    "prisma": "7.10.0",
     "turbo": "^2.11.4",
     "typescript": "~6.0.3"
   }
