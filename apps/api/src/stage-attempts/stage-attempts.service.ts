@@ -102,7 +102,10 @@ export class StageAttemptsService {
     const label = describeEvent(payload);
     let outcome: Verdict<null>;
     try {
-      outcome = await this.applyInTransaction(envelope);
+      outcome =
+        payload.type === 'transcript'
+          ? await this.recordTranscript(envelope)
+          : await this.applyInTransaction(envelope);
     } catch (error) {
       logger.error(
         `[${attemptId}] failed to apply ${label}: ${(error as Error).message}`,
@@ -119,6 +122,43 @@ export class StageAttemptsService {
     logger.warn(`[${attemptId}] rejected ${label}: ${outcome.reason} (${outcome.message})`);
     const attempt = outcome.reason === 'ATTEMPT_NOT_FOUND' ? null : await this.get(attemptId);
     return { accepted: false, reason: outcome.reason, message: outcome.message, attempt };
+  }
+
+  /**
+   * Fast path for transcript lines: append-only records that never change attempt
+   * state, so they skip the row lock and transaction that state-changing events need.
+   * Under load, routing them through the lock made them queue behind each other and
+   * starve the transaction pool (P2028).
+   */
+  private async recordTranscript(envelope: AgentEventEnvelope): Promise<Verdict<null>> {
+    const { eventId, attemptId, payload } = envelope;
+    if (payload.type !== 'transcript') throw new Error('recordTranscript expects a transcript');
+
+    const attempt = await this.prisma.stageAttempt.findUnique({
+      where: { id: attemptId },
+      select: { status: true, mode: true },
+    });
+    if (!attempt) return rejected('ATTEMPT_NOT_FOUND', `Attempt ${attemptId} does not exist.`);
+
+    const verdict = decideRecord(attempt, payload.mode);
+    try {
+      await this.prisma.agentEvent.create({
+        data: {
+          id: eventId,
+          attemptId,
+          type: payload.type,
+          payload: payload as Prisma.InputJsonValue,
+          accepted: verdict.ok,
+          rejectionReason: verdict.ok ? null : verdict.reason,
+          occurredAt: new Date(envelope.occurredAt),
+        },
+      });
+    } catch (error) {
+      // Unique violation on the eventId: a redelivery of a line we already stored.
+      if ((error as { code?: string }).code !== 'P2002') throw error;
+      logger.debug(`[${attemptId}] duplicate transcript ${eventId}; ignoring`);
+    }
+    return verdict;
   }
 
   private applyInTransaction(envelope: AgentEventEnvelope): Promise<Verdict<null>> {

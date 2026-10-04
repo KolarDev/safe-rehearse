@@ -66,8 +66,12 @@ export default defineAgent({
     const models = provider.createModels();
     log.info('voice models created', { provider: provider.id, kind: models.kind });
 
+    // Realtime models detect turns server-side. Saying so explicitly stops LiveKit
+    // provisioning its own local end-of-turn model, which costs CPU on every utterance.
     const session = new voice.AgentSession(
-      models.kind === 'realtime' ? { llm: models.llm } : models,
+      models.kind === 'realtime'
+        ? { llm: models.llm, turnHandling: { turnDetection: 'realtime_llm' } }
+        : models,
     );
 
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, ({ oldState, newState }) => {
@@ -95,7 +99,8 @@ export default defineAgent({
       const fields = { reason, ...(error ? { detail: describeError(error) } : {}) };
       if (error) log.error('session closed with an error', fields);
       else log.info('session closed', fields);
-      void controller.end(endReason(reason, error), error ? describeError(error) : undefined);
+      const detail = error ? describeError(error) : `LiveKit close reason: ${reason}`;
+      void controller.end(endReason(reason, error, controller), detail);
     });
 
     try {
@@ -109,12 +114,16 @@ export default defineAgent({
   },
 });
 
-function endReason(reason: voice.ShutdownReason, error: unknown): SessionEndReason {
-  if (error) return 'agent_error';
+function endReason(
+  reason: voice.ShutdownReason,
+  error: unknown,
+  controller: SessionController,
+): SessionEndReason {
+  if (error || reason === voice.CloseReason.ERROR) return 'agent_error';
   if (reason === voice.CloseReason.PARTICIPANT_DISCONNECTED) return 'participant_left';
-  if (reason === voice.CloseReason.ERROR) return 'agent_error';
-  // The session closed normally. If the attempt was graded this is a no-op; if not, it drops.
-  return 'completed';
+  // Only a graded attempt ended normally. An ungraded one closing for any other
+  // reason (room closed, job shutdown) means the learner's connection went away.
+  return controller.attempt.status === 'IN_PROGRESS' ? 'network_failure' : 'completed';
 }
 
 /** Extracts the useful message from LiveKit/provider error shapes (e.g. Gemini's body.reason). */

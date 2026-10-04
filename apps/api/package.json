@@ -20,7 +20,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:validate": "prisma validate",
-    "db:format": "prisma format"
+    "db:format": "prisma format",
+    "serve": "node dist/main.js"
   },
   "dependencies": {
     "@nestjs/bullmq": "^12.0.0",

@@ -31,7 +31,12 @@ export class BackendClient {
     );
   }
 
-  sendEvent(attemptId: string, payload: AgentEventPayload): Promise<AgentEventDecision> {
+  /** `maxAttempts` defaults to 3; best-effort events (transcripts) pass 1. */
+  sendEvent(
+    attemptId: string,
+    payload: AgentEventPayload,
+    options: { maxAttempts?: number } = {},
+  ): Promise<AgentEventDecision> {
     const envelope: AgentEventEnvelope = {
       contractVersion: CONTRACT_VERSION,
       eventId: randomUUID(),
@@ -46,6 +51,7 @@ export class BackendClient {
         method: 'POST',
         body: JSON.stringify(envelope),
       },
+      options.maxAttempts,
     );
   }
 
@@ -53,10 +59,11 @@ export class BackendClient {
     path: string,
     schema: T,
     init: RequestInit = {},
+    maxAttempts = MAX_ATTEMPTS,
   ): Promise<z.infer<T>> {
     const method = init.method ?? 'GET';
     let lastError: unknown;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const startedAt = Date.now();
       try {
         const response = await fetch(new URL(path, this.baseUrl), {
@@ -82,7 +89,7 @@ export class BackendClient {
           throw error;
         }
         lastError = error;
-        if (attempt < MAX_ATTEMPTS) {
+        if (attempt < maxAttempts) {
           log.warn('backend request failed, retrying', fields);
           await new Promise((r) => setTimeout(r, 250 * 2 ** attempt));
         } else {

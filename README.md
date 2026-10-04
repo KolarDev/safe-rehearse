@@ -70,6 +70,18 @@ pnpm dev                     # web, api and voice-agent
 
 Then open http://localhost:3000/session, pick the sample stage, and start talking.
 
+### On a slow or busy machine: `pnpm lite`
+
+`pnpm dev` runs three watchers (Next.js/Turbopack, Nest's TypeScript watcher, tsx) that use CPU all
+the time. Realtime voice is sensitive to that: replies lag, audio stutters, and LiveKit may drop
+the connection. `pnpm lite` builds everything once, then runs the compiled apps with no watchers:
+
+```bash
+pnpm lite                    # build, then serve web, api and voice-agent (no hot reload)
+```
+
+Re-run it after code changes. Closing other heavy apps (extra browser tabs, editors) also helps.
+
 ### Test the whole flow without AI
 
 With the API running:

@@ -9,6 +9,9 @@ import {
 import type { BackendClient } from './backend-client.js';
 import { createLogger, errorFields, type Logger } from './logger.js';
 
+/** Above this many unsent transcript lines, new lines are dropped rather than queued. */
+const MAX_PENDING_TRANSCRIPTS = 20;
+
 /** What a tool call tells the model, plus an optional mode switch for the transport to perform. */
 export interface ToolOutcome {
   /** Whether the backend accepted the underlying event. */
@@ -24,7 +27,9 @@ export interface ToolOutcome {
  */
 export class SessionController {
   private ended = false;
-  private outbox: Promise<unknown> = Promise.resolve();
+  private controlLane: Promise<unknown> = Promise.resolve();
+  private transcriptLane: Promise<unknown> = Promise.resolve();
+  private pendingTranscripts = 0;
   private readonly log: Logger;
 
   private constructor(
@@ -64,12 +69,33 @@ export class SessionController {
     return decision.accepted;
   }
 
-  /** Fire-and-forget: a lost transcript line must never stall the conversation. */
+  /**
+   * Fire-and-forget on its own lane: a slow or lost transcript line must never
+   * stall the conversation or delay a tool call. One delivery attempt, and new
+   * lines are dropped (with a warning) if the backlog grows too long.
+   */
   recordTranscript(speaker: 'LEARNER' | 'AGENT', text: string): void {
     if (!this.isLive || !text.trim()) return;
-    this.send({ type: 'transcript', mode: this.mode, speaker, text }).catch((error: unknown) =>
-      this.log.warn('transcript event lost', { speaker, ...errorFields(error) }),
-    );
+    if (this.pendingTranscripts >= MAX_PENDING_TRANSCRIPTS) {
+      this.log.warn('transcript backlog full; dropping line', {
+        speaker,
+        pending: this.pendingTranscripts,
+      });
+      return;
+    }
+    this.pendingTranscripts++;
+    const payload = { type: 'transcript', mode: this.mode, speaker, text } as const;
+    const result = this.transcriptLane.then(async () => {
+      const decision = await this.backend.sendEvent(this.snapshot.id, payload, { maxAttempts: 1 });
+      // Transcript replies never update the snapshot: one could arrive after a
+      // control event and overwrite newer state.
+      this.logDecision(payload, decision, this.snapshot);
+    });
+    this.transcriptLane = result
+      .catch((error: unknown) =>
+        this.log.warn('transcript event lost', { speaker, ...errorFields(error) }),
+      )
+      .finally(() => this.pendingTranscripts--);
   }
 
   async recordEvidence(
@@ -139,19 +165,19 @@ export class SessionController {
   }
 
   /**
-   * Events go out one at a time, in order. The backend serialises per attempt
-   * anyway; sending concurrently only made requests queue on its row lock and
-   * could deliver transcript lines out of order.
+   * State-changing events (session, evidence, feedback, transitions) go out one at
+   * a time, in order, on the control lane. Transcripts use their own lane so they
+   * can never delay these.
    */
   private send(payload: Parameters<BackendClient['sendEvent']>[1]): Promise<AgentEventDecision> {
-    const result = this.outbox.then(async () => {
+    const result = this.controlLane.then(async () => {
       const before = this.snapshot;
       const decision = await this.backend.sendEvent(this.snapshot.id, payload);
       if (decision.attempt) this.snapshot = decision.attempt;
       this.logDecision(payload, decision, before);
       return decision;
     });
-    this.outbox = result.catch(() => undefined);
+    this.controlLane = result.catch(() => undefined);
     return result;
   }
 
