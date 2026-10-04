@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { AgentDispatchMetadata } from '@safe-rehearse/agent-contracts';
 import type { VoiceSessionResponse } from '@safe-rehearse/types';
@@ -13,6 +13,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
  */
 @Injectable()
 export class VoiceSessionService {
+  private readonly logger = new Logger('VoiceSession');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService<Env, true>,
@@ -26,7 +28,13 @@ export class VoiceSessionService {
     });
     if (count === 0) {
       const exists = await this.prisma.stageAttempt.count({ where: { id: attemptId } });
-      if (!exists) throw new NotFoundException(`Attempt ${attemptId} not found`);
+      if (!exists) {
+        this.logger.warn(`voice session refused: attempt ${attemptId} not found`);
+        throw new NotFoundException(`Attempt ${attemptId} not found`);
+      }
+      this.logger.warn(
+        `voice session refused for ${attemptId}: already issued or attempt not in progress`,
+      );
       throw new ConflictException(
         'This attempt already had its voice session or is no longer in progress. Start a new attempt to retry.',
       );
@@ -56,6 +64,10 @@ export class VoiceSessionService {
       ],
     });
 
+    const agentName = this.config.get('LIVEKIT_AGENT_NAME', { infer: true });
+    this.logger.log(
+      `voice session issued for ${attemptId}: room ${roomName}, agent "${agentName}" dispatched on join`,
+    );
     return {
       serverUrl: this.config.get('LIVEKIT_URL', { infer: true }),
       roomName,

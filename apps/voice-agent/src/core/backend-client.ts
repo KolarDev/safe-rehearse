@@ -7,7 +7,9 @@ import {
   type AgentEventPayload,
 } from '@safe-rehearse/agent-contracts';
 import type { z } from 'zod';
+import { createLogger, errorFields } from './logger.js';
 
+const log = createLogger('backend-client');
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 3;
 
@@ -52,8 +54,10 @@ export class BackendClient {
     schema: T,
     init: RequestInit = {},
   ): Promise<z.infer<T>> {
+    const method = init.method ?? 'GET';
     let lastError: unknown;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const startedAt = Date.now();
       try {
         const response = await fetch(new URL(path, this.baseUrl), {
           ...init,
@@ -63,16 +67,27 @@ export class BackendClient {
         if (!response.ok) {
           // 4xx is a bug on our side or a missing attempt. Retrying will not help.
           const error = new Error(
-            `${init.method ?? 'GET'} ${path} → ${response.status}: ${await response.text()}`,
+            `${method} ${path} → ${response.status}: ${await response.text()}`,
           );
           if (response.status < 500) throw Object.assign(error, { permanent: true });
           throw error;
         }
-        return schema.parse(await response.json());
+        const body = schema.parse(await response.json());
+        log.debug('backend request ok', { method, path, ms: Date.now() - startedAt, attempt });
+        return body;
       } catch (error) {
-        if ((error as { permanent?: boolean }).permanent) throw error;
+        const fields = { method, path, attempt, ms: Date.now() - startedAt, ...errorFields(error) };
+        if ((error as { permanent?: boolean }).permanent) {
+          log.error('backend request rejected (not retrying)', fields);
+          throw error;
+        }
         lastError = error;
-        if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 250 * 2 ** attempt));
+        if (attempt < MAX_ATTEMPTS) {
+          log.warn('backend request failed, retrying', fields);
+          await new Promise((r) => setTimeout(r, 250 * 2 ** attempt));
+        } else {
+          log.error('backend request failed after all retries', fields);
+        }
       }
     }
     throw lastError;

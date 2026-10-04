@@ -7,6 +7,7 @@ import {
   type StageMode,
 } from '@safe-rehearse/agent-contracts';
 import type { BackendClient } from './backend-client.js';
+import { createLogger, errorFields, type Logger } from './logger.js';
 
 /** What a tool call tells the model, plus an optional mode switch for the transport to perform. */
 export interface ToolOutcome {
@@ -24,15 +25,25 @@ export interface ToolOutcome {
 export class SessionController {
   private ended = false;
   private outbox: Promise<unknown> = Promise.resolve();
+  private readonly log: Logger;
 
   private constructor(
     private readonly backend: BackendClient,
     readonly context: AgentSessionContext,
     private snapshot: AttemptSnapshot,
-  ) {}
+  ) {
+    this.log = createLogger('session', { attemptId: snapshot.id });
+  }
 
   static async open(backend: BackendClient, attemptId: string): Promise<SessionController> {
     const context = await backend.getContext(attemptId);
+    createLogger('session', { attemptId }).info('context loaded', {
+      stage: context.stage.title,
+      status: context.attempt.status,
+      mode: context.attempt.mode,
+      knowledgeItems: context.knowledge.length,
+      criteria: context.criteria.length,
+    });
     return new SessionController(backend, context, context.attempt);
   }
 
@@ -57,7 +68,7 @@ export class SessionController {
   recordTranscript(speaker: 'LEARNER' | 'AGENT', text: string): void {
     if (!this.isLive || !text.trim()) return;
     this.send({ type: 'transcript', mode: this.mode, speaker, text }).catch((error: unknown) =>
-      console.warn('transcript event failed', error),
+      this.log.warn('transcript event lost', { speaker, ...errorFields(error) }),
     );
   }
 
@@ -116,10 +127,14 @@ export class SessionController {
   async end(reason: SessionEndReason, detail?: string): Promise<void> {
     if (this.ended) return;
     this.ended = true;
+    this.log.info('reporting session end', { reason, detail });
     try {
       await this.send({ type: 'session', event: 'ended', reason, detail });
     } catch (error) {
-      console.error('failed to report session end', error);
+      this.log.error('failed to report session end; attempt may stay IN_PROGRESS', {
+        reason,
+        ...errorFields(error),
+      });
     }
   }
 
@@ -130,12 +145,43 @@ export class SessionController {
    */
   private send(payload: Parameters<BackendClient['sendEvent']>[1]): Promise<AgentEventDecision> {
     const result = this.outbox.then(async () => {
+      const before = this.snapshot;
       const decision = await this.backend.sendEvent(this.snapshot.id, payload);
       if (decision.attempt) this.snapshot = decision.attempt;
+      this.logDecision(payload, decision, before);
       return decision;
     });
     this.outbox = result.catch(() => undefined);
     return result;
+  }
+
+  private logDecision(
+    payload: Parameters<BackendClient['sendEvent']>[1],
+    decision: AgentEventDecision,
+    before: AttemptSnapshot,
+  ): void {
+    const event = payload.type === 'session' ? `session:${payload.event}` : payload.type;
+    if (!decision.accepted) {
+      this.log.warn('backend rejected event', {
+        event,
+        reason: decision.reason,
+        message: decision.message,
+      });
+    } else if (payload.type === 'transcript') {
+      this.log.debug('transcript recorded', { speaker: payload.speaker, text: payload.text });
+    } else {
+      this.log.info('backend accepted event', { event });
+    }
+
+    const after = this.snapshot;
+    if (after.mode !== before.mode) {
+      this.log.info('mode changed', { from: before.mode, to: after.mode });
+    }
+    if (after.status !== before.status) {
+      const fields = { from: before.status, to: after.status };
+      if (after.status === 'DROPPED') this.log.warn('attempt dropped', fields);
+      else this.log.info('attempt status changed', fields);
+    }
   }
 }
 

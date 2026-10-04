@@ -3,6 +3,7 @@ import { cli, defineAgent, ServerOptions, voice, type JobContext } from '@liveki
 import { AgentDispatchMetadata, type SessionEndReason } from '@safe-rehearse/agent-contracts';
 import { loadConfig } from './config.js';
 import { BackendClient } from './core/backend-client.js';
+import { createLogger, errorFields } from './core/logger.js';
 import { SessionController } from './core/session-controller.js';
 import { StageAgent } from './livekit/stage-agent.js';
 import { selectProvider } from './providers/index.js';
@@ -13,40 +14,98 @@ import { selectProvider } from './providers/index.js';
  */
 export default defineAgent({
   entry: async (ctx: JobContext) => {
+    const jobLog = createLogger('job', { jobId: ctx.job.id, room: ctx.job.room?.name });
+    jobLog.info('job received');
+
+    let attemptId: string;
+    try {
+      ({ attemptId } = AgentDispatchMetadata.parse(JSON.parse(ctx.job.metadata || '{}')));
+    } catch (error) {
+      jobLog.error('job metadata is missing a valid attemptId; refusing the job', {
+        metadata: ctx.job.metadata,
+        ...errorFields(error),
+      });
+      ctx.shutdown('invalid dispatch metadata');
+      return;
+    }
+    const log = jobLog.child({ attemptId });
+
     const config = loadConfig();
-    const { attemptId } = AgentDispatchMetadata.parse(JSON.parse(ctx.job.metadata || '{}'));
     const backend = new BackendClient(config.SAFE_REHEARSE_API_URL, config.AGENT_API_SECRET);
 
-    const controller = await SessionController.open(backend, attemptId);
+    let controller: SessionController;
+    try {
+      controller = await SessionController.open(backend, attemptId);
+    } catch (error) {
+      log.error('could not load session context from the API; is it running?', {
+        api: config.SAFE_REHEARSE_API_URL,
+        ...errorFields(error),
+      });
+      ctx.shutdown('context unavailable');
+      return;
+    }
+
     if (!controller.isLive || !(await controller.start())) {
-      console.warn(`attempt ${attemptId} is ${controller.attempt.status}; not starting a session`);
+      log.warn('attempt is not in progress; not starting a session', {
+        status: controller.attempt.status,
+      });
       ctx.shutdown('attempt not in progress');
       return;
     }
 
     // Fallback if the job ends without the session's close event (e.g. worker shutdown).
-    ctx.addShutdownCallback(() =>
-      controller.end('agent_error', 'job shut down before the session closed'),
-    );
+    ctx.addShutdownCallback(async () => {
+      log.info('job shutting down');
+      await controller.end('agent_error', 'job shut down before the session closed');
+    });
 
     await ctx.connect();
+    log.info('connected to room');
 
-    const models = selectProvider(config.VOICE_PROVIDER).createModels();
+    const provider = selectProvider(config.VOICE_PROVIDER);
+    const models = provider.createModels();
+    log.info('voice models created', { provider: provider.id, kind: models.kind });
+
     const session = new voice.AgentSession(
       models.kind === 'realtime' ? { llm: models.llm } : models,
     );
 
+    session.on(voice.AgentSessionEventTypes.AgentStateChanged, ({ oldState, newState }) => {
+      log.debug('agent state', { from: oldState, to: newState });
+    });
+    session.on(voice.AgentSessionEventTypes.UserStateChanged, ({ oldState, newState }) => {
+      log.debug('learner state', { from: oldState, to: newState });
+    });
     session.on(voice.AgentSessionEventTypes.ConversationItemAdded, ({ item }) => {
       if (item.type !== 'message') return;
-      if (item.role === 'user') controller.recordTranscript('LEARNER', item.textContent ?? '');
-      if (item.role === 'assistant') controller.recordTranscript('AGENT', item.textContent ?? '');
+      const text = item.textContent ?? '';
+      if (item.role === 'user') {
+        log.info('learner said', { text });
+        controller.recordTranscript('LEARNER', text);
+      }
+      if (item.role === 'assistant') {
+        log.info('agent said', { text });
+        controller.recordTranscript('AGENT', text);
+      }
     });
-
+    session.on(voice.AgentSessionEventTypes.Error, ({ error }) => {
+      log.error('session error', { detail: describeError(error) });
+    });
     session.on(voice.AgentSessionEventTypes.Close, ({ reason, error }) => {
+      const fields = { reason, ...(error ? { detail: describeError(error) } : {}) };
+      if (error) log.error('session closed with an error', fields);
+      else log.info('session closed', fields);
       void controller.end(endReason(reason, error), error ? describeError(error) : undefined);
     });
 
-    await session.start({ agent: new StageAgent(controller, controller.mode), room: ctx.room });
+    try {
+      await session.start({ agent: new StageAgent(controller, controller.mode), room: ctx.room });
+      log.info('session started', { mode: controller.mode });
+    } catch (error) {
+      log.error('session failed to start', errorFields(error));
+      await controller.end('agent_error', 'session failed to start');
+      ctx.shutdown('session failed to start');
+    }
   },
 });
 
@@ -58,14 +117,28 @@ function endReason(reason: voice.ShutdownReason, error: unknown): SessionEndReas
   return 'completed';
 }
 
-function describeError(error: object): string {
-  const inner = 'error' in error && error.error instanceof Error ? error.error : error;
-  return inner instanceof Error ? inner.message : String(inner);
+/** Extracts the useful message from LiveKit/provider error shapes (e.g. Gemini's body.reason). */
+function describeError(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error);
+  const inner = 'error' in error && error.error ? error.error : error;
+  if (inner && typeof inner === 'object') {
+    const body = 'body' in inner ? (inner.body as { reason?: unknown } | undefined) : undefined;
+    if (body && typeof body.reason === 'string') return body.reason;
+    if ('message' in inner && typeof inner.message === 'string' && inner.message) {
+      return inner.message;
+    }
+  }
+  return JSON.stringify(inner);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
-  selectProvider(config.VOICE_PROVIDER).validate();
+  const provider = selectProvider(config.VOICE_PROVIDER);
+  provider.validate();
+  console.log(
+    `[voice-agent] starting worker "${config.LIVEKIT_AGENT_NAME}" with provider "${provider.id}", ` +
+      `API ${config.SAFE_REHEARSE_API_URL}, LiveKit ${process.env['LIVEKIT_URL'] ?? '(unset)'}`,
+  );
   cli.runApp(
     new ServerOptions({
       agent: fileURLToPath(import.meta.url),
