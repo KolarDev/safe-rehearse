@@ -1,14 +1,17 @@
 'use client';
 
 import {
-  LiveKitRoom,
   RoomAudioRenderer,
+  RoomContext,
+  StartAudio,
+  useConnectionState,
   useLocalParticipant,
   useTranscriptions,
   useVoiceAssistant,
 } from '@livekit/components-react';
 import type { VoiceSessionResponse } from '@safe-rehearse/types';
-import { useEffect } from 'react';
+import { Room } from 'livekit-client';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 
 interface Props {
@@ -18,6 +21,28 @@ interface Props {
 }
 
 export function VoiceSession({ session, attemptId, onLeave }: Props) {
+  const [room] = useState(() => new Room());
+  const [error, setError] = useState<string | null>(null);
+  const pendingDisconnect = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Connect exactly once per mounted session. React StrictMode mounts, unmounts and
+  // remounts in development; a naive connect/disconnect would join twice with the same
+  // identity, and the agent would read the first disconnect as the learner leaving.
+  useEffect(() => {
+    if (pendingDisconnect.current) {
+      clearTimeout(pendingDisconnect.current);
+      pendingDisconnect.current = null;
+    } else {
+      room
+        .connect(session.serverUrl, session.participantToken)
+        .then(() => room.localParticipant.setMicrophoneEnabled(true))
+        .catch((e: Error) => setError(e.message));
+    }
+    return () => {
+      pendingDisconnect.current = setTimeout(() => void room.disconnect(), 0);
+    };
+  }, [room, session.serverUrl, session.participantToken]);
+
   // Closing the tab mid-session drops the attempt (backend rule: dropped attempts are not graded).
   useEffect(() => {
     const handler = () => api.abandonOnUnload(attemptId);
@@ -26,22 +51,20 @@ export function VoiceSession({ session, attemptId, onLeave }: Props) {
   }, [attemptId]);
 
   return (
-    <LiveKitRoom
-      serverUrl={session.serverUrl}
-      token={session.participantToken}
-      connect
-      audio
-      video={false}
-      onDisconnected={onLeave}
-      className="flex flex-col gap-4"
-    >
+    <RoomContext.Provider value={room}>
       <RoomAudioRenderer />
+      <StartAudio
+        label="Click to enable agent audio"
+        className="rounded border px-3 py-1 text-sm"
+      />
+      {error && <p className="text-sm text-red-600">Could not connect: {error}</p>}
       <SessionBody onLeave={onLeave} />
-    </LiveKitRoom>
+    </RoomContext.Provider>
   );
 }
 
 function SessionBody({ onLeave }: { onLeave: () => void }) {
+  const connection = useConnectionState();
   const { state } = useVoiceAssistant();
   const { localParticipant } = useLocalParticipant();
   const transcriptions = useTranscriptions();
@@ -50,7 +73,7 @@ function SessionBody({ onLeave }: { onLeave: () => void }) {
     <section className="flex flex-col gap-3 rounded border p-4">
       <div className="flex items-center justify-between text-sm">
         <span>
-          Agent: <strong>{state}</strong>
+          Connection: <strong>{connection}</strong> · Agent: <strong>{state}</strong>
         </span>
         <button className="rounded border px-3 py-1" onClick={onLeave}>
           Leave

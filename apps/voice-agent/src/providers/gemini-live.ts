@@ -6,6 +6,11 @@ const GeminiLiveEnv = z.object({
   GOOGLE_API_KEY: z.string().min(1, 'GOOGLE_API_KEY is required for VOICE_PROVIDER=gemini-live'),
   GEMINI_LIVE_MODEL: z.string().default('gemini-2.5-flash-native-audio-preview-12-2025'),
   GEMINI_LIVE_VOICE: z.string().default('Puck'),
+  /**
+   * Optional BCP-47 code. Leave unset for native-audio models: they detect the
+   * language themselves and reject codes such as en-GB.
+   */
+  GEMINI_LIVE_LANGUAGE: z.string().optional(),
 });
 
 /** Google Gemini Live: a speech-to-speech realtime model. */
@@ -24,7 +29,7 @@ export class GeminiLiveProvider implements VoiceModelProvider {
         apiKey: env.GOOGLE_API_KEY,
         model: env.GEMINI_LIVE_MODEL,
         voice: env.GEMINI_LIVE_VOICE,
-        language: 'en-GB',
+        ...(env.GEMINI_LIVE_LANGUAGE ? { language: env.GEMINI_LIVE_LANGUAGE } : {}),
       }),
     };
   }

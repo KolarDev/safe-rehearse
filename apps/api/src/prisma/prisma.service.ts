@@ -9,6 +9,9 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
   constructor(config: ConfigService<Env, true>) {
     super({
       adapter: new PrismaPg({ connectionString: config.get('DATABASE_URL', { infer: true }) }),
+      // Prisma's defaults (2s to start, 5s to run) are too tight on a loaded dev machine,
+      // where they surface as P2028 and a 500 to the voice agent.
+      transactionOptions: { maxWait: 10_000, timeout: 20_000 },
     });
   }
 

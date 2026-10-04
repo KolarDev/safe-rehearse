@@ -23,6 +23,7 @@ export interface ToolOutcome {
  */
 export class SessionController {
   private ended = false;
+  private outbox: Promise<unknown> = Promise.resolve();
 
   private constructor(
     private readonly backend: BackendClient,
@@ -122,12 +123,19 @@ export class SessionController {
     }
   }
 
-  private async send(
-    payload: Parameters<BackendClient['sendEvent']>[1],
-  ): Promise<AgentEventDecision> {
-    const decision = await this.backend.sendEvent(this.snapshot.id, payload);
-    if (decision.attempt) this.snapshot = decision.attempt;
-    return decision;
+  /**
+   * Events go out one at a time, in order. The backend serialises per attempt
+   * anyway; sending concurrently only made requests queue on its row lock and
+   * could deliver transcript lines out of order.
+   */
+  private send(payload: Parameters<BackendClient['sendEvent']>[1]): Promise<AgentEventDecision> {
+    const result = this.outbox.then(async () => {
+      const decision = await this.backend.sendEvent(this.snapshot.id, payload);
+      if (decision.attempt) this.snapshot = decision.attempt;
+      return decision;
+    });
+    this.outbox = result.catch(() => undefined);
+    return result;
   }
 }
 
