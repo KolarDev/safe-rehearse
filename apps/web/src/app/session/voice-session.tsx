@@ -11,7 +11,7 @@ import {
   useVoiceAssistant,
 } from '@livekit/components-react';
 import type { AttemptSnapshot, VoiceSessionResponse } from '@safe-rehearse/types';
-import { ConnectionState, DisconnectReason, Room, RoomEvent, Track } from 'livekit-client';
+import { ConnectionState, DisconnectReason, Room, RoomEvent } from 'livekit-client';
 import { useEffect, useRef, useState } from 'react';
 import { MicIcon, MicOffIcon, PhoneOffIcon } from '@/components/icons';
 import { Alert, Badge, Button, Card, cx } from '@/components/ui';
