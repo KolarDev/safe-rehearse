@@ -344,6 +344,7 @@ function toSnapshot(attempt: AttemptWithResults): AttemptSnapshot {
     mode: attempt.mode,
     startedAt: attempt.startedAt.toISOString(),
     endedAt: attempt.endedAt?.toISOString() ?? null,
+    endReason: attempt.endReason,
     result: graded
       ? {
           criteria: attempt.results

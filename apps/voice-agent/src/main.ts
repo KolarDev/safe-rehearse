@@ -49,6 +49,9 @@ export default defineAgent({
       log.warn('attempt is not in progress; not starting a session', {
         status: controller.attempt.status,
       });
+      // The room belongs to a finished attempt. Close it so LiveKit stops dispatching
+      // agents into it and any learner still connected is disconnected.
+      await closeRoom(ctx, log, 'attempt not in progress');
       ctx.shutdown('attempt not in progress');
       return;
     }
@@ -100,7 +103,14 @@ export default defineAgent({
       if (error) log.error('session closed with an error', fields);
       else log.info('session closed', fields);
       const detail = error ? describeError(error) : `LiveKit close reason: ${reason}`;
-      void controller.end(endReason(reason, error, controller), detail);
+      void controller.end(endReason(reason, error, controller), detail).then(async () => {
+        // After a model/agent failure the attempt is dropped. Close the room so the
+        // learner's page disconnects at once (and shows the drop) and LiveKit does
+        // not re-dispatch an agent into a dead room.
+        if (error || reason === voice.CloseReason.ERROR) {
+          await closeRoom(ctx, log, 'agent session failed');
+        }
+      });
     });
 
     try {
@@ -126,6 +136,19 @@ function endReason(
   return controller.attempt.status === 'IN_PROGRESS' ? 'network_failure' : 'completed';
 }
 
+async function closeRoom(
+  ctx: JobContext,
+  log: ReturnType<typeof createLogger>,
+  why: string,
+): Promise<void> {
+  try {
+    await ctx.deleteRoom(ctx.job.room?.name);
+    log.info('room closed', { why });
+  } catch (error) {
+    log.warn('could not close the room', { why, ...errorFields(error) });
+  }
+}
+
 /** Extracts the useful message from LiveKit/provider error shapes (e.g. Gemini's body.reason). */
 function describeError(error: unknown): string {
   if (!error || typeof error !== 'object') return String(error);
@@ -148,12 +171,30 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     `[voice-agent] starting worker "${config.LIVEKIT_AGENT_NAME}" with provider "${provider.id}", ` +
       `API ${config.SAFE_REHEARSE_API_URL}, LiveKit ${process.env['LIVEKIT_URL'] ?? '(unset)'}`,
   );
+  let atCapacity = false;
   cli.runApp(
     new ServerOptions({
       agent: fileURLToPath(import.meta.url),
       agentName: config.LIVEKIT_AGENT_NAME,
       // The 10s default is too tight for job processes on modest dev machines.
       initializeProcessTimeout: 60_000,
+      // LiveKit's default load is whole-machine CPU. On a busy machine that sits near
+      // 100%, so LiveKit treats the worker as full and silently never dispatches the
+      // job: the learner waits forever. Capacity is really "how many sessions this
+      // worker runs", so report that instead.
+      loadFunc: async (server) => {
+        const load = Math.min(server.activeJobs.length / config.AGENT_MAX_SESSIONS, 1);
+        if (load >= 1 !== atCapacity) {
+          atCapacity = load >= 1;
+          console.warn(
+            atCapacity
+              ? `[voice-agent] at capacity (${config.AGENT_MAX_SESSIONS} sessions); new sessions wait until one ends`
+              : '[voice-agent] below capacity again; accepting new sessions',
+          );
+        }
+        return load;
+      },
+      loadThreshold: 1,
     }),
   );
 }

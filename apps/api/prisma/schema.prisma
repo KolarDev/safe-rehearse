@@ -1,4 +1,4 @@
-// SafeRehearse data model. The backend (apps/api) is the only owner of this database.
+`// SafeRehearse data model. The backend (apps/api) is the only owner of this database.
 // See docs/architecture.md for the principles these models encode.
 
 generator client {

@@ -11,6 +11,12 @@ const GeminiLiveEnv = z.object({
    * language themselves and reject codes such as en-GB.
    */
   GEMINI_LIVE_LANGUAGE: z.string().optional(),
+  /**
+   * Thinking budget in tokens for Gemini 2.5 live models. Thinking adds latency to
+   * every reply, which a voice tutor feels; it defaults to 0 (off) for 2.5 models.
+   * Set e.g. 512 to turn it back on. Ignored for other model families.
+   */
+  GEMINI_LIVE_THINKING_BUDGET: z.coerce.number().int().min(0).optional(),
 });
 
 /** Google Gemini Live: a speech-to-speech realtime model. */
@@ -23,6 +29,8 @@ export class GeminiLiveProvider implements VoiceModelProvider {
 
   createModels(): VoiceModels {
     const env = this.env();
+    const isGemini25 = env.GEMINI_LIVE_MODEL.startsWith('gemini-2.5');
+    const thinkingBudget = env.GEMINI_LIVE_THINKING_BUDGET ?? 0;
     return {
       kind: 'realtime',
       llm: new google.realtime.RealtimeModel({
@@ -30,6 +38,7 @@ export class GeminiLiveProvider implements VoiceModelProvider {
         model: env.GEMINI_LIVE_MODEL,
         voice: env.GEMINI_LIVE_VOICE,
         ...(env.GEMINI_LIVE_LANGUAGE ? { language: env.GEMINI_LIVE_LANGUAGE } : {}),
+        ...(isGemini25 ? { thinkingConfig: { thinkingBudget } } : {}),
       }),
     };
   }

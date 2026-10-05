@@ -38,6 +38,8 @@ export const AttemptSnapshot = z.object({
   mode: StageMode,
   startedAt: z.iso.datetime(),
   endedAt: z.iso.datetime().nullable(),
+  /** Why the attempt ended, e.g. "graded", "participant_left", "agent_error", "superseded". */
+  endReason: z.string().nullable(),
   /** Present only once the attempt is PASSED or FAILED. */
   result: z
     .object({

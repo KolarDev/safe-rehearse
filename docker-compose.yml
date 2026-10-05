@@ -1,5 +1,6 @@
 # Local development infrastructure. Not for production.
-#   docker compose up -d
+#   pnpm infra:up           → Postgres + Redis (use with LiveKit Cloud)
+#   pnpm infra:up:livekit   → also a local LiveKit server
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -22,8 +23,10 @@ services:
     ports:
       - '16379:6379' # non-default host port avoids clashing with other local Redis
 
-  # LiveKit in --dev mode uses the fixed credentials devkey / secret.
+  # Local LiveKit, only when the "local-livekit" profile is enabled (pnpm infra:up:livekit).
+  # --dev mode uses the fixed credentials devkey / secret.
   livekit:
+    profiles: ['local-livekit']
     image: livekit/livekit-server:latest
     command: --dev --bind 0.0.0.0 --node-ip 127.0.0.1
     ports:

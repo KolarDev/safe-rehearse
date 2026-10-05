@@ -52,10 +52,13 @@ export function AttemptPanel({ attempt }: { attempt: AttemptSnapshot | null }) {
       {attempt.status === 'DROPPED' && (
         <div className="mt-5 flex gap-3 rounded-xl bg-warning-soft px-4 py-3 text-sm text-warning">
           <AlertIcon className="mt-0.5 shrink-0" width={18} height={18} />
-          <p>
-            This attempt was interrupted and <strong>will not be graded</strong>. Retrying starts a
-            completely fresh attempt.
-          </p>
+          <div>
+            <p className="font-semibold">{dropReasonLabel(attempt.endReason)}</p>
+            <p className="mt-1">
+              This attempt <strong>will not be graded</strong>. Retrying starts a completely fresh
+              attempt.
+            </p>
+          </div>
         </div>
       )}
 
@@ -190,6 +193,24 @@ function StepRow({
       </div>
     </li>
   );
+}
+
+/** Plain-language reasons for the backend's endReason codes. */
+function dropReasonLabel(reason: string | null): string {
+  switch (reason) {
+    case 'participant_left':
+      return 'You left the session.';
+    case 'network_failure':
+      return 'The connection was lost.';
+    case 'agent_error':
+      return 'The AI voice service stopped unexpectedly.';
+    case 'timeout':
+      return 'The session timed out.';
+    case 'superseded':
+      return 'Replaced by a newer attempt.';
+    default:
+      return 'The session was interrupted.';
+  }
 }
 
 function formatTime(iso: string) {

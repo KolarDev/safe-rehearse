@@ -18,7 +18,7 @@ The end-to-end architecture is in place:
 - **Web:** a minimal dev session page (`/session`).
 
 Course content is a single **sample** stage (not expert-reviewed). There is no authentication yet.
-See [`docs/architecture.md`](docs/architecture.md) for the design, the principles, and what is still planned.
+See [`docs/architecture.md`](docs/architecture.md), [`docs/course-authoring.md`](docs/course-authoring.md) (how to author a course for the AI) for the design, the principles, and what is still planned.
 
 ## Monorepo structure
 
@@ -62,13 +62,25 @@ safe-rehearse/
 ```bash
 pnpm install
 cp .env.example .env         # local defaults; add GOOGLE_API_KEY for real voice
-pnpm infra:up                # Postgres :55432, Redis :16379, LiveKit :7880
+pnpm infra:up:livekit        # Postgres :55432, Redis :16379, local LiveKit :7880
 pnpm db:migrate              # apply migrations
 pnpm db:seed                 # sample stage (development content only)
 pnpm dev                     # web, api and voice-agent
 ```
 
 Then open http://localhost:3000/session, pick the sample stage, and start talking.
+
+### Using LiveKit Cloud: `pnpm cloud`
+
+Put your LiveKit Cloud URL and keys in `.env`, then:
+
+```bash
+pnpm infra:up                # Postgres + Redis only (no local LiveKit)
+pnpm cloud                   # checks .env points at Cloud, then runs web, api and voice-agent
+```
+
+The voice agent still runs on your machine; only the LiveKit server moves. See
+[docs/livekit-cloud.md](docs/livekit-cloud.md).
 
 ### On a slow or busy machine: `pnpm lite`
 
@@ -93,17 +105,18 @@ pnpm test                    # unit tests for the StageAttempt rules and grading
 
 ## Commands
 
-| Command                                      | Description                                         |
-| -------------------------------------------- | --------------------------------------------------- |
-| `pnpm dev`                                   | Run web, api and voice-agent in watch mode          |
-| `pnpm build` / `lint` / `typecheck` / `test` | Across all workspaces (Turborepo)                   |
-| `pnpm simulate`                              | Run mock-provider scenarios against the running API |
-| `pnpm infra:up` / `infra:down`               | Start / stop local Docker infrastructure            |
-| `pnpm db:migrate`                            | Create/apply migrations (dev)                       |
-| `pnpm db:seed`                               | Seed the sample stage                               |
-| `pnpm db:generate`                           | Generate the Prisma client                          |
-| `pnpm db:studio`                             | Browse the database                                 |
-| `pnpm format` / `format:check`               | Prettier                                            |
+| Command                                             | Description                                                           |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| `pnpm dev`                                          | Run web, api and voice-agent in watch mode                            |
+| `pnpm build` / `lint` / `typecheck` / `test`        | Across all workspaces (Turborepo)                                     |
+| `pnpm simulate`                                     | Run mock-provider scenarios against the running API                   |
+| `pnpm infra:up` / `infra:up:livekit` / `infra:down` | Postgres + Redis / plus local LiveKit / stop all                      |
+| `pnpm cloud`                                        | Check `.env` targets LiveKit Cloud, then run web, api and voice-agent |
+| `pnpm db:migrate`                                   | Create/apply migrations (dev)                                         |
+| `pnpm db:seed`                                      | Seed the sample stage                                                 |
+| `pnpm db:generate`                                  | Generate the Prisma client                                            |
+| `pnpm db:studio`                                    | Browse the database                                                   |
+| `pnpm format` / `format:check`                      | Prettier                                                              |
 
 Individual apps:
 

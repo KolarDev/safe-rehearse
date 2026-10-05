@@ -19,6 +19,7 @@ import { api } from '@/lib/api';
 import { createLogger } from '@/lib/log';
 
 const log = createLogger('room');
+const AGENT_JOIN_TIMEOUT_MS = 30_000;
 
 const MODE_LABEL: Record<AttemptSnapshot['mode'], string> = {
   TEACHER: 'Teacher',
@@ -147,9 +148,25 @@ const AGENT_STATE: Record<string, { label: string; tone: 'brand' | 'neutral' | '
 
 function AgentStage({ mode, onLeave }: { mode: AttemptSnapshot['mode']; onLeave: () => void }) {
   const connection = useConnectionState();
-  const { state, audioTrack } = useVoiceAssistant();
+  const { state, audioTrack, agent: agentParticipant } = useVoiceAssistant();
   const { localParticipant, isMicrophoneEnabled } = useLocalParticipant();
   const agent = AGENT_STATE[state] ?? { label: state, tone: 'neutral' as const };
+
+  // LiveKit dispatches the agent once, when the room is created. If that fails the
+  // learner would otherwise wait forever, so say so after a reasonable delay.
+  const [joinTimedOut, setJoinTimedOut] = useState(false);
+  const waitingForAgent = connection === ConnectionState.Connected && !agentParticipant;
+  useEffect(() => {
+    if (!waitingForAgent) return;
+    const timer = setTimeout(() => {
+      log.error(
+        `no agent joined within ${AGENT_JOIN_TIMEOUT_MS / 1000}s; check the voice-agent terminal for "job received"`,
+      );
+      setJoinTimedOut(true);
+    }, AGENT_JOIN_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [waitingForAgent]);
+  const agentMissing = joinTimedOut && waitingForAgent;
 
   const lastState = useRef(state);
   useEffect(() => {
@@ -171,6 +188,14 @@ function AgentStage({ mode, onLeave }: { mode: AttemptSnapshot['mode']; onLeave:
       <div className="mx-auto mt-6 flex h-28 w-48 items-center justify-center">
         <BarVisualizer state={state} barCount={5} track={audioTrack} options={{ minHeight: 14 }} />
       </div>
+      {agentMissing && (
+        <div className="mx-auto mt-4 max-w-md">
+          <Alert>
+            The voice agent hasn&apos;t joined. Make sure the voice-agent is running, then leave
+            this session and start a fresh attempt.
+          </Alert>
+        </div>
+      )}
       <p className="mt-4 text-center text-sm font-semibold">{agent.label}</p>
       <p className="mt-1 text-center text-xs text-muted">
         {state === 'listening' ? 'Go ahead and speak.' : 'Your microphone stays on throughout.'}
