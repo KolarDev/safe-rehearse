@@ -115,3 +115,48 @@ export function Spinner({ className }: { className?: string }) {
     />
   );
 }
+
+type NoticeTone = 'warning' | 'success' | 'danger';
+
+const noticeTones: Record<NoticeTone, string> = {
+  warning: 'border-warning/30 bg-warning-soft text-warning',
+  success: 'border-success/30 bg-success-soft text-success',
+  danger: 'border-danger/30 bg-danger-soft text-danger',
+};
+
+/** A titled message about what is happening and what the learner should do. */
+export function Notice({
+  tone,
+  title,
+  icon,
+  children,
+  onDismiss,
+}: {
+  tone: NoticeTone;
+  title: string;
+  icon?: ReactNode;
+  children?: ReactNode;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div
+      role={tone === 'danger' ? 'alert' : 'status'}
+      className={cx('flex items-start gap-3 rounded-xl border px-4 py-3', noticeTones[tone])}
+    >
+      <span className="mt-0.5 shrink-0">{icon ?? <AlertIcon width={18} height={18} />}</span>
+      <div className="flex-1">
+        <p className="text-sm font-semibold">{title}</p>
+        {children && <div className="mt-1 text-sm text-foreground/80">{children}</div>}
+      </div>
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          className="shrink-0 opacity-70 hover:opacity-100"
+          aria-label="Dismiss"
+        >
+          <XIcon width={16} height={16} />
+        </button>
+      )}
+    </div>
+  );
+}

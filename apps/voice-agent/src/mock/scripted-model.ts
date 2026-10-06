@@ -29,9 +29,7 @@ export async function runScript(
       log(`  agent:   ${step.agent}`);
       controller.recordTranscript('AGENT', step.agent);
     } else if ('tool' in step) {
-      const tool = toolsForMode(controller.mode, controller.context).find(
-        (t) => t.name === step.tool,
-      );
+      const tool = toolsForMode(controller.mode).find((t) => t.name === step.tool);
       if (!tool) {
         if (step.expect === 'rejected') {
           log(`  tool ${step.tool} → not offered in ${controller.mode} (as expected)`);

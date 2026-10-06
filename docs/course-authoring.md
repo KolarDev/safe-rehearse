@@ -26,7 +26,7 @@ Why this is the right approach for us:
 | Experts can't edit it                         | Safeguarding experts can review and edit plain text   |
 | Can't prove what it was taught                | The pack _is_ the record of what it was taught        |
 
-The **grade** never comes from the model's judgement. The model only records evidence; the backend
+The **grade** never comes from the model's judgement. A model only finds evidence in the transcript; the backend
 applies the expert's criteria (Principle 6). Authoring is how experts control _both_ what is taught
 and how it is assessed.
 
@@ -58,8 +58,9 @@ The voice agent builds one system prompt per mode (`apps/voice-agent/src/agents/
 [Criteria]            Examiner only: "- reports-to-lead: States they will report to…"
 ```
 
-The criteria keys also become the **only allowed values** of the Examiner's `record_evidence`
-tool, so the model cannot invent a criterion.
+The Examiner sees the criteria descriptions so it can give the learner a fair chance to show
+each one, but it records nothing. When the role-play ends, a separate evidence model reads the exam
+transcript and returns evidence only against these criterion keys, so it cannot invent a criterion.
 
 So the quality of a session is almost entirely the quality of these texts. That is good news: it is
 writing work, not machine-learning work.
@@ -116,9 +117,9 @@ neutrality.
 
 ```text
 Play Mr Okafor, 70, who says a family member shouts at him and once pushed him. Stay in
-character. Do not hint, coach or react to quality. Whenever the learner does something that
-matches a criterion, record evidence with their words. After 4–6 exchanges, or when the
-learner has clearly finished, end the role-play and finish this part.
+character. Do not hint, coach or react to quality. Give the learner room to respond fully.
+After 4–6 exchanges, or when the learner has clearly finished, end the role-play and finish
+this part.
 ```
 
 ### Criteria: the most important thing you write

@@ -1,3 +1,4 @@
+import { GeminiEvidenceExtractor } from './gemini-evidence.js';
 import { GeminiLiveProvider } from './gemini-live.js';
 import type { VoiceModelProvider } from './types.js';
 
@@ -16,4 +17,9 @@ export function selectProvider(id: string): VoiceModelProvider {
     );
   }
   return create();
+}
+
+/** Evidence extraction for the assessed part. One implementation for now. */
+export function createEvidenceExtractor(): GeminiEvidenceExtractor {
+  return new GeminiEvidenceExtractor();
 }

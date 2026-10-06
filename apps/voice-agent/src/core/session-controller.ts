@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import {
+  LessonEvent,
   nextStageStep,
   type AgentEventDecision,
   type AgentSessionContext,
@@ -6,11 +8,26 @@ import {
   type SessionEndReason,
   type StageMode,
 } from '@safe-rehearse/agent-contracts';
+import { z } from 'zod';
 import type { BackendClient } from './backend-client.js';
+import type { EvidenceExtractor, TranscriptLine } from './evidence-extractor.js';
+import { noScreen, type LessonPresenter } from './lesson-presenter.js';
 import { createLogger, errorFields, type Logger } from './logger.js';
 
 /** Above this many unsent transcript lines, new lines are dropped rather than queued. */
 const MAX_PENDING_TRANSCRIPTS = 20;
+
+/** Extraction is tried this many times before the attempt is dropped ungraded. */
+const EXTRACTION_ATTEMPTS = 2;
+/** Pause before retrying, long enough to clear a brief rate limit. */
+const EXTRACTION_RETRY_DELAY_MS = 4_000;
+
+export interface SessionOptions {
+  /** Finds assessment evidence in the exam transcript when the Examiner finishes. */
+  extractor: EvidenceExtractor;
+  /** Where visual lesson content goes. Defaults to nowhere. */
+  presenter?: LessonPresenter;
+}
 
 /** What a tool call tells the model, plus an optional mode switch for the transport to perform. */
 export interface ToolOutcome {
@@ -30,17 +47,25 @@ export class SessionController {
   private controlLane: Promise<unknown> = Promise.resolve();
   private transcriptLane: Promise<unknown> = Promise.resolve();
   private pendingTranscripts = 0;
+  /** Every line of this session, kept locally so evidence never depends on delivery to the backend. */
+  private readonly transcript: (TranscriptLine & { mode: StageMode })[] = [];
   private readonly log: Logger;
 
   private constructor(
     private readonly backend: BackendClient,
     readonly context: AgentSessionContext,
     private snapshot: AttemptSnapshot,
+    private readonly extractor: EvidenceExtractor,
+    private readonly presenter: LessonPresenter,
   ) {
     this.log = createLogger('session', { attemptId: snapshot.id });
   }
 
-  static async open(backend: BackendClient, attemptId: string): Promise<SessionController> {
+  static async open(
+    backend: BackendClient,
+    attemptId: string,
+    { extractor, presenter = noScreen }: SessionOptions,
+  ): Promise<SessionController> {
     const context = await backend.getContext(attemptId);
     createLogger('session', { attemptId }).info('context loaded', {
       stage: context.stage.title,
@@ -49,7 +74,7 @@ export class SessionController {
       knowledgeItems: context.knowledge.length,
       criteria: context.criteria.length,
     });
-    return new SessionController(backend, context, context.attempt);
+    return new SessionController(backend, context, context.attempt, extractor, presenter);
   }
 
   get attempt(): AttemptSnapshot {
@@ -76,6 +101,7 @@ export class SessionController {
    */
   recordTranscript(speaker: 'LEARNER' | 'AGENT', text: string): void {
     if (!this.isLive || !text.trim()) return;
+    this.transcript.push({ mode: this.mode, speaker, text });
     if (this.pendingTranscripts >= MAX_PENDING_TRANSCRIPTS) {
       this.log.warn('transcript backlog full; dropping line', {
         speaker,
@@ -98,6 +124,7 @@ export class SessionController {
       .finally(() => this.pendingTranscripts--);
   }
 
+  /** Sends one piece of evidence. The backend checks the mode, criterion and confidence. */
   async recordEvidence(
     criterionId: string,
     evidence: string,
@@ -126,10 +153,64 @@ export class SessionController {
       : { accepted: false, message: `Feedback not recorded: ${decision.message}` };
   }
 
+  /**
+   * Shows visual lesson content on the learner's screen. Purely presentational:
+   * it changes no attempt state, so it skips the backend and returns at once.
+   */
+  present(event: LessonEvent): ToolOutcome {
+    if (!this.isLive) {
+      return { accepted: false, message: 'The session has ended, so nothing was shown.' };
+    }
+    const parsed = LessonEvent.safeParse(event);
+    if (!parsed.success) {
+      this.log.warn('lesson event invalid; not shown', { issues: z.prettifyError(parsed.error) });
+      return {
+        accepted: false,
+        message: `Not shown: ${z.prettifyError(parsed.error)} Carry on teaching without it.`,
+      };
+    }
+    this.presenter.show({
+      version: '1',
+      id: randomUUID(),
+      mode: this.mode,
+      sentAt: new Date().toISOString(),
+      event: parsed.data,
+    });
+    this.log.info('lesson event shown', { kind: parsed.data.kind, title: parsed.data.title });
+    return {
+      accepted: true,
+      message:
+        "It is on the learner's screen now. Carry on speaking naturally; do not read it out word for word.",
+    };
+  }
+
   /** Asks the backend to move on from the current mode. The backend decides. */
   async completeMode(): Promise<ToolOutcome> {
     const from = this.mode;
     const to = nextStageStep(from);
+
+    if (to === 'ASSESSMENT' && this.isLive) {
+      const exam = this.transcript.filter((l) => l.mode === 'EXAMINER');
+      if (!exam.some((l) => l.speaker === 'LEARNER')) {
+        return {
+          accepted: false,
+          message:
+            'The learner has not responded in the assessed role-play yet. Carry on with it, and give them the chance to respond.',
+        };
+      }
+      const gathered = await this.gatherEvidence(exam);
+      if (!gathered) {
+        await this.end('agent_error', 'could not assess the exam transcript');
+        return {
+          accepted: false,
+          message:
+            'SafeRehearse could not record the result of this assessment because of a technical problem. ' +
+            'Tell the learner kindly and briefly that this attempt will not be graded and that they can start a ' +
+            'fresh attempt, then say goodbye.',
+        };
+      }
+    }
+
     const decision = await this.send({ type: 'stage_transition_requested', from, to });
 
     if (!decision.accepted) {
@@ -147,6 +228,38 @@ export class SessionController {
       };
     }
     return { accepted: true, message: `Moving on to the ${describeMode(to)} part.`, nextMode: to };
+  }
+
+  /**
+   * Runs the extractor over the exam transcript and submits what it finds, before
+   * the backend grades. Returns false if no answer could be obtained at all.
+   */
+  private async gatherEvidence(exam: TranscriptLine[]): Promise<boolean> {
+    for (let attempt = 1; attempt <= EXTRACTION_ATTEMPTS; attempt++) {
+      if (attempt > 1) await new Promise((r) => setTimeout(r, EXTRACTION_RETRY_DELAY_MS));
+      const startedAt = Date.now();
+      try {
+        const findings = await this.extractor.extract({ context: this.context, transcript: exam });
+        this.log.info('evidence extracted from exam transcript', {
+          extractor: this.extractor.id,
+          lines: exam.length,
+          found: findings.map((f) => `${f.criterionId} (${f.confidence})`),
+          ms: Date.now() - startedAt,
+        });
+        for (const f of findings) {
+          await this.recordEvidence(f.criterionId, f.evidence, f.confidence);
+        }
+        return true;
+      } catch (error) {
+        this.log.warn('evidence extraction failed', {
+          attempt,
+          of: EXTRACTION_ATTEMPTS,
+          ms: Date.now() - startedAt,
+          ...errorFields(error),
+        });
+      }
+    }
+    return false;
   }
 
   /** Reports the end of the session exactly once. The backend drops the attempt if it is ungraded. */

@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@livekit/agents-plugin-google@1.9.1':
+    hash: 36f0120af948ec4b15cb5476483f609b9df5fba6db3ab570f6fc35e0507957b0
+    path: patches/@livekit__agents-plugin-google@1.9.1.patch
+
 importers:
 
   .:
@@ -110,7 +115,7 @@ importers:
         version: 1.9.1(@livekit/rtc-node@1.1.0)(@types/node@24.13.6)(typescript@6.0.3)(zod@4.6.5)
       '@livekit/agents-plugin-google':
         specifier: ^1.9.1
-        version: 1.9.1(@livekit/agents@1.9.1(@livekit/rtc-node@1.1.0)(@types/node@24.13.6)(typescript@6.0.3)(zod@4.6.5))(@livekit/rtc-node@1.1.0)(ws@8.22.0)(zod@4.6.5)
+        version: 1.9.1(patch_hash=36f0120af948ec4b15cb5476483f609b9df5fba6db3ab570f6fc35e0507957b0)(@livekit/agents@1.9.1(@livekit/rtc-node@1.1.0)(@types/node@24.13.6)(typescript@6.0.3)(zod@4.6.5))(@livekit/rtc-node@1.1.0)(ws@8.22.0)(zod@4.6.5)
       '@safe-rehearse/agent-contracts':
         specifier: workspace:*
         version: link:../../packages/agent-contracts
@@ -5623,7 +5628,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@livekit/agents-plugin-google@1.9.1(@livekit/agents@1.9.1(@livekit/rtc-node@1.1.0)(@types/node@24.13.6)(typescript@6.0.3)(zod@4.6.5))(@livekit/rtc-node@1.1.0)(ws@8.22.0)(zod@4.6.5)':
+  '@livekit/agents-plugin-google@1.9.1(patch_hash=36f0120af948ec4b15cb5476483f609b9df5fba6db3ab570f6fc35e0507957b0)(@livekit/agents@1.9.1(@livekit/rtc-node@1.1.0)(@types/node@24.13.6)(typescript@6.0.3)(zod@4.6.5))(@livekit/rtc-node@1.1.0)(ws@8.22.0)(zod@4.6.5)':
     dependencies:
       '@google/genai': 2.24.0
       '@livekit/agents': 1.9.1(@livekit/rtc-node@1.1.0)(@types/node@24.13.6)(typescript@6.0.3)(zod@4.6.5)
@@ -7570,8 +7575,8 @@ snapshots:
       '@next/eslint-plugin-next': 16.3.6(eslint@9.39.5(jiti@2.7.0))
       eslint: 9.39.5(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0))
-      eslint-plugin-import: 2.32.0(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.7.0))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.5(jiti@2.7.0))
       eslint-plugin-react: 7.37.5(eslint@9.39.5(jiti@2.7.0))
       eslint-plugin-react-hooks: 7.1.1(eslint@9.39.5(jiti@2.7.0))
@@ -7601,7 +7606,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -7612,21 +7617,21 @@ snapshots:
       tinyglobby: 0.2.17
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.14.0(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.7.0)):
+  eslint-module-utils@2.14.0(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       eslint: 9.39.5(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.10
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.7.0)):
+  eslint-plugin-import@2.32.0(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.2.0
@@ -7637,7 +7642,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.5(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.10
-      eslint-module-utils: 2.14.0(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.7.0))
+      eslint-module-utils: 2.14.0(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0)))(eslint@9.39.5(jiti@2.7.0))
       hasown: 2.0.4
       is-core-module: 2.17.0
       is-glob: 4.0.3

@@ -11,8 +11,10 @@ import { StageSummary } from '@safe-rehearse/types';
 import { z } from 'zod';
 import { loadConfig } from '../config.js';
 import { BackendClient } from '../core/backend-client.js';
+import type { EvidenceExtractor } from '../core/evidence-extractor.js';
+import type { LessonPresenter } from '../core/lesson-presenter.js';
 import { SessionController } from '../core/session-controller.js';
-import { SCENARIOS } from './scenarios.js';
+import { SCENARIOS, type Scenario } from './scenarios.js';
 import { runScript } from './scripted-model.js';
 
 const config = loadConfig();
@@ -33,6 +35,22 @@ async function http<T extends z.ZodType>(
   if (!response.ok) throw new Error(`${path} → ${response.status}: ${await response.text()}`);
   return schema.parse(await response.json());
 }
+
+/** Prints what would appear on the learner's screen. */
+const consoleScreen: LessonPresenter = {
+  show: ({ event }) => console.log(`  screen:  [${event.kind}] ${event.title}`),
+};
+
+/** Stands in for the evidence model: "finds" what the scenario scripts. */
+const scriptedExtractor = (scenario: Scenario): EvidenceExtractor => ({
+  id: 'scripted',
+  extract: async ({ transcript }) => {
+    const said = transcript.filter((l) => l.speaker === 'LEARNER').length;
+    console.log(`  assess:  ${transcript.length} exam line(s), ${said} from the learner`);
+    if (scenario.evidence === 'fail') throw new Error('scripted extraction outage');
+    return scenario.evidence ?? [];
+  },
+});
 
 const startAttempt = (stageId: string) =>
   http(AttemptSnapshot, '/stage-attempts', { stageId, learnerRef });
@@ -55,7 +73,10 @@ async function main() {
 
     try {
       const attempt = await startAttempt(stage.id);
-      const controller = await SessionController.open(backend, attempt.id);
+      const controller = await SessionController.open(backend, attempt.id, {
+        extractor: scriptedExtractor(scenario),
+        presenter: consoleScreen,
+      });
       await controller.start();
       await runScript(controller, scenario.steps);
 

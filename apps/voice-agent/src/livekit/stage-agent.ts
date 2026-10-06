@@ -15,7 +15,7 @@ export class StageAgent extends voice.Agent {
     private readonly controller: SessionController,
     private readonly mode: StageMode,
   ) {
-    const tools = toolsForMode(mode, controller.context);
+    const tools = toolsForMode(mode);
     super({
       id: `stage-${mode.toLowerCase()}`,
       instructions: buildInstructions(mode, controller.context),
@@ -38,7 +38,7 @@ function adaptTools(controller: SessionController, mode: StageMode): llm.ToolCon
   const log = createLogger('tools', { attemptId: controller.attempt.id, mode });
 
   return Object.fromEntries(
-    toolsForMode(mode, controller.context).map((tool) => [
+    toolsForMode(mode).map((tool) => [
       tool.name,
       llm.tool({
         description: tool.description,

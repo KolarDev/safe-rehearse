@@ -7,6 +7,8 @@ import { Alert, Button, Card, cx, Spinner } from '@/components/ui';
 import { api } from '@/lib/api';
 import { createLogger } from '@/lib/log';
 import { AttemptPanel } from './attempt-panel';
+import { ResultCard } from './result-card';
+import { SessionEndedNotice } from './session-notices';
 import { VoiceSession } from './voice-session';
 
 const log = createLogger('session');
@@ -23,6 +25,7 @@ export default function SessionPage() {
   const [voice, setVoice] = useState<VoiceSessionResponse | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [endNoticeDismissed, setEndNoticeDismissed] = useState(false);
 
   useEffect(() => {
     api
@@ -73,6 +76,7 @@ export default function SessionPage() {
       log.info(`starting stage ${stageId} as "${learnerRef}"`);
       const created = await api.startAttempt({ stageId, learnerRef });
       setAttempt(created);
+      setEndNoticeDismissed(false);
       setVoice(await api.startVoiceSession(created.id));
     } catch (e) {
       log.error('could not start the session', e);
@@ -94,7 +98,10 @@ export default function SessionPage() {
     }
   }
 
-  const inSession = voice !== null && attempt?.status === 'IN_PROGRESS';
+  const graded = attempt?.status === 'PASSED' || attempt?.status === 'FAILED';
+  // After grading the room stays open so the agent can finish its goodbye;
+  // VoiceSession leaves on its own once the agent has stopped speaking.
+  const inSession = voice !== null && (attempt?.status === 'IN_PROGRESS' || graded);
 
   return (
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
@@ -103,21 +110,31 @@ export default function SessionPage() {
           Rehearsal studio
         </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
-          {inSession ? 'Session in progress' : 'Start a voice rehearsal'}
+          {graded
+            ? 'Assessment complete'
+            : inSession
+              ? 'Session in progress'
+              : 'Start a voice rehearsal'}
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          {inSession
-            ? 'Speak naturally. The agent teaches, then practises with you, then assesses you. SafeRehearse decides the result.'
-            : 'Pick a stage and start. Your browser will ask for microphone access.'}
+          {graded
+            ? 'SafeRehearse has graded your attempt against the expert-set criteria.'
+            : inSession
+              ? 'Speak naturally. The agent teaches, then practises with you, then assesses you. SafeRehearse decides the result.'
+              : 'Pick a stage and start. Your browser will ask for microphone access.'}
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex flex-col gap-4">
           {error && <Alert onDismiss={() => setError(null)}>{error}</Alert>}
+          {graded && attempt && <ResultCard attempt={attempt} />}
+          {!inSession && attempt && !endNoticeDismissed && (
+            <SessionEndedNotice attempt={attempt} onDismiss={() => setEndNoticeDismissed(true)} />
+          )}
 
           {inSession && voice && attempt ? (
-            <VoiceSession session={voice} attempt={attempt} onLeave={leave} />
+            <VoiceSession session={voice} attempt={attempt} finished={graded} onLeave={leave} />
           ) : (
             <SetupCard
               stages={stages}

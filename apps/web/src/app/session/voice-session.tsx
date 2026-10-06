@@ -17,6 +17,8 @@ import { MicIcon, MicOffIcon, PhoneOffIcon } from '@/components/icons';
 import { Alert, Badge, Button, Card, cx } from '@/components/ui';
 import { api } from '@/lib/api';
 import { createLogger } from '@/lib/log';
+import { LessonBoard } from './lesson-board';
+import { VoiceServiceNotice } from './session-notices';
 
 const log = createLogger('room');
 const AGENT_JOIN_TIMEOUT_MS = 30_000;
@@ -27,13 +29,20 @@ const MODE_LABEL: Record<AttemptSnapshot['mode'], string> = {
   EXAMINER: 'Examiner',
 };
 
+/** Leave this long after the agent stops speaking once the attempt is graded. */
+const GOODBYE_GRACE_MS = 2_500;
+/** Never keep a finished session open longer than this. */
+const GOODBYE_MAX_MS = 25_000;
+
 interface Props {
   session: VoiceSessionResponse;
   attempt: AttemptSnapshot;
+  /** The attempt has been graded; the session only remains for the agent's goodbye. */
+  finished: boolean;
   onLeave: () => void;
 }
 
-export function VoiceSession({ session, attempt, onLeave }: Props) {
+export function VoiceSession({ session, attempt, finished, onLeave }: Props) {
   const [room] = useState(() => new Room());
   const [error, setError] = useState<string | null>(null);
   const pendingDisconnect = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -122,6 +131,7 @@ export function VoiceSession({ session, attempt, onLeave }: Props) {
   return (
     <RoomContext.Provider value={room}>
       <RoomAudioRenderer />
+      {finished && <LeaveAfterGoodbye onLeave={onLeave} />}
       <Card className="flex flex-col overflow-hidden">
         <AgentStage mode={attempt.mode} onLeave={onLeave} />
         {error && (
@@ -129,10 +139,41 @@ export function VoiceSession({ session, attempt, onLeave }: Props) {
             <Alert>Could not connect: {error}</Alert>
           </div>
         )}
+        <div className="px-6 empty:hidden [&:not(:empty)]:py-4">
+          <VoiceServiceNotice />
+        </div>
+        <LessonBoard mode={attempt.mode} />
         <Transcript />
       </Card>
     </RoomContext.Provider>
   );
+}
+
+/**
+ * Once graded, let the agent finish saying goodbye, then leave the room. The
+ * grade can land before, during or after the goodbye, so leave when the agent has
+ * been quiet for a moment, or after a hard cap.
+ */
+function LeaveAfterGoodbye({ onLeave }: { onLeave: () => void }) {
+  const { state } = useVoiceAssistant();
+  const leave = useRef(onLeave);
+  useEffect(() => {
+    leave.current = onLeave;
+  });
+
+  useEffect(() => {
+    log.info('attempt graded; leaving once the agent has said goodbye');
+    const timer = setTimeout(() => leave.current(), GOODBYE_MAX_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (state === 'speaking') return;
+    const timer = setTimeout(() => leave.current(), GOODBYE_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [state]);
+
+  return null;
 }
 
 const AGENT_STATE: Record<string, { label: string; tone: 'brand' | 'neutral' | 'warning' }> = {

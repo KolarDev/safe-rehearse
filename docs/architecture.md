@@ -150,14 +150,22 @@ apps/voice-agent/src/
 
 Tools per mode (the model sees only these):
 
-| Mode             | Tools                              |
-| ---------------- | ---------------------------------- |
-| Teacher          | `complete_mode`                    |
-| Practice Partner | `record_feedback`, `complete_mode` |
-| Examiner         | `record_evidence`, `complete_mode` |
+| Mode             | Tools                                         |
+| ---------------- | --------------------------------------------- |
+| Teacher          | `show_text`, `show_scenario`, `complete_mode` |
+| Practice Partner | `record_feedback`, `complete_mode`            |
+| Examiner         | `complete_mode`                               |
 
-`record_evidence.criterion_id` is an enum of the stage's criterion ids, so the model cannot invent one.
 When the backend accepts `complete_mode`, the LiveKit adapter hands off to the next mode's agent.
+
+**Evidence is extracted after the exam, not recorded during it.** Gemini Live reliably closes the
+connection (1011 "Internal error") when it calls a tool while playing a character, so the Examiner
+has no evidence tool. When it calls `complete_mode`, the `SessionController` sends the Examiner-mode
+transcript (kept locally, so it never depends on transcript delivery) to an `EvidenceExtractor`
+(`src/core/evidence-extractor.ts`; today a Gemini text model, `src/providers/gemini-evidence.ts`). It
+submits each finding as a normal `evidence` event, then requests `ASSESSMENT`. The backend validates and
+grades exactly as before. `complete_mode` is refused until the learner has said something in the exam.
+If extraction fails twice, the attempt is ended as `agent_error` and dropped, never graded on nothing.
 
 ### Adding a provider
 

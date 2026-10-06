@@ -67,34 +67,52 @@ export function AttemptPanel({ attempt }: { attempt: AttemptSnapshot | null }) {
           <h3 className="text-xs font-semibold tracking-wide text-muted uppercase">
             Assessment criteria
           </h3>
-          <ul className="mt-3 space-y-2">
-            {attempt.result.criteria.map((c) => (
-              <li
-                key={c.criterionId}
-                className={cx(
-                  'flex gap-3 rounded-xl px-3 py-2.5 text-sm',
-                  c.met ? 'bg-success-soft' : 'bg-danger-soft',
-                )}
-              >
-                <span
-                  className={cx(
-                    'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-white',
-                    c.met ? 'bg-success' : 'bg-danger',
-                  )}
-                >
-                  {c.met ? (
-                    <CheckIcon width={12} height={12} strokeWidth={3} />
-                  ) : (
-                    <XIcon width={12} height={12} strokeWidth={3} />
-                  )}
-                </span>
-                <span className="text-foreground">{c.description}</span>
-              </li>
-            ))}
-          </ul>
+          <CriteriaResults criteria={attempt.result.criteria} className="mt-3" />
         </div>
       )}
     </Card>
+  );
+}
+
+type CriterionResults = NonNullable<AttemptSnapshot['result']>['criteria'];
+
+/** Each criterion with whether the backend judged it met. */
+export function CriteriaResults({
+  criteria,
+  className,
+}: {
+  criteria: CriterionResults;
+  className?: string;
+}) {
+  return (
+    <ul className={cx('space-y-2', className)}>
+      {criteria.map((c) => (
+        <li
+          key={c.criterionId}
+          className={cx(
+            'flex gap-3 rounded-xl px-3 py-2.5 text-sm',
+            c.met ? 'bg-success-soft' : 'bg-danger-soft',
+          )}
+        >
+          <span
+            className={cx(
+              'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-white',
+              c.met ? 'bg-success' : 'bg-danger',
+            )}
+          >
+            {c.met ? (
+              <CheckIcon width={12} height={12} strokeWidth={3} />
+            ) : (
+              <XIcon width={12} height={12} strokeWidth={3} />
+            )}
+          </span>
+          <span className="text-foreground">
+            <span className="sr-only">{c.met ? 'Met: ' : 'Not met: '}</span>
+            {c.description}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

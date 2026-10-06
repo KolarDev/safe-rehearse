@@ -1,12 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import { cli, defineAgent, ServerOptions, voice, type JobContext } from '@livekit/agents';
 import { AgentDispatchMetadata, type SessionEndReason } from '@safe-rehearse/agent-contracts';
+import { RESUME_AFTER_RECONNECT } from './agents/instructions.js';
 import { loadConfig } from './config.js';
 import { BackendClient } from './core/backend-client.js';
 import { createLogger, errorFields } from './core/logger.js';
 import { SessionController } from './core/session-controller.js';
+import { sendNotice } from './livekit/room-notices.js';
+import { roomPresenter } from './livekit/room-presenter.js';
 import { StageAgent } from './livekit/stage-agent.js';
-import { selectProvider } from './providers/index.js';
+import { createEvidenceExtractor, selectProvider } from './providers/index.js';
 
 /**
  * LiveKit worker entry. One job = one learner's voice session for one StageAttempt.
@@ -35,7 +38,13 @@ export default defineAgent({
 
     let controller: SessionController;
     try {
-      controller = await SessionController.open(backend, attemptId);
+      controller = await SessionController.open(backend, attemptId, {
+        extractor: createEvidenceExtractor(),
+        presenter: roomPresenter(
+          ctx.room,
+          createLogger('lesson', { jobId: ctx.job.id, attemptId }),
+        ),
+      });
     } catch (error) {
       log.error('could not load session context from the API; is it running?', {
         api: config.SAFE_REHEARSE_API_URL,
@@ -77,8 +86,18 @@ export default defineAgent({
         : models,
     );
 
+    // Set while the voice model reconnects after a transient provider error; cleared
+    // when the agent speaks again, which is when the learner hears that it's back.
+    let reconnecting = false;
+    const noticeLog = createLogger('notice', { jobId: ctx.job.id, attemptId });
+
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, ({ oldState, newState }) => {
       log.debug('agent state', { from: oldState, to: newState });
+      if (reconnecting && newState === 'speaking') {
+        reconnecting = false;
+        log.info('voice model reconnected; agent speaking again');
+        sendNotice(ctx.room, 'voice_restored', noticeLog);
+      }
     });
     session.on(voice.AgentSessionEventTypes.UserStateChanged, ({ oldState, newState }) => {
       log.debug('learner state', { from: oldState, to: newState });
@@ -96,6 +115,22 @@ export default defineAgent({
       }
     });
     session.on(voice.AgentSessionEventTypes.Error, ({ error }) => {
+      // A recoverable model error means the provider dropped the connection with a
+      // transient fault and is reconnecting (see patches/@livekit__agents-plugin-google).
+      // The session carries on: tell the learner, and have the agent pick up again.
+      if (error.type === 'realtime_model_error' && error.recoverable) {
+        log.warn('voice model connection lost; reconnecting', { detail: describeError(error) });
+        reconnecting = true;
+        sendNotice(ctx.room, 'voice_reconnecting', noticeLog);
+        try {
+          session.generateReply({ instructions: RESUME_AFTER_RECONNECT });
+        } catch (replyError) {
+          log.warn('could not ask the agent to resume; it will reply when the learner speaks', {
+            ...errorFields(replyError),
+          });
+        }
+        return;
+      }
       log.error('session error', { detail: describeError(error) });
     });
     session.on(voice.AgentSessionEventTypes.Close, ({ reason, error }) => {
@@ -167,6 +202,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const config = loadConfig();
   const provider = selectProvider(config.VOICE_PROVIDER);
   provider.validate();
+  createEvidenceExtractor().validate();
   console.log(
     `[voice-agent] starting worker "${config.LIVEKIT_AGENT_NAME}" with provider "${provider.id}", ` +
       `API ${config.SAFE_REHEARSE_API_URL}, LiveKit ${process.env['LIVEKIT_URL'] ?? '(unset)'}`,

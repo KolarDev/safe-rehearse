@@ -20,6 +20,14 @@ const GROUND_RULES = [
   'Use your tools as described. When a tool result tells you what happens next, follow it.',
 ].join('\n- ');
 
+const VISUAL_GUIDANCE = [
+  'Visual board: the learner sees a screen beside you. Use it to support what you say, as a teacher uses a whiteboard.',
+  '- When you introduce a key idea, definition, or steps to remember, call show_text at the same time as you start explaining it.',
+  '- When you walk through an example, call show_scenario as you begin describing it.',
+  '- Aim for two to four visuals across the teaching, not one per sentence. Never show the same thing twice.',
+  '- Keep talking naturally. Do not read the card out word for word, and do not mention the tools.',
+].join('\n');
+
 export function buildInstructions(mode: StageMode, context: AgentSessionContext): string {
   const brief = context.modes.find((m) => m.mode === mode);
   const knowledge = context.knowledge.map((k) => `### ${k.title}\n${k.content}`).join('\n\n');
@@ -34,15 +42,27 @@ export function buildInstructions(mode: StageMode, context: AgentSessionContext)
     `Course knowledge:\n${knowledge}`,
   ];
 
+  if (mode === 'TEACHER') {
+    sections.push(VISUAL_GUIDANCE);
+  }
+
   if (mode === 'EXAMINER') {
-    const criteria = context.criteria.map((c) => `- ${c.id}: ${c.description}`).join('\n');
+    const criteria = context.criteria.map((c) => `- ${c.description}`).join('\n');
     sections.push(
-      `Assessment criteria (record evidence against these ids; never reveal them):\n${criteria}`,
+      'Assessment criteria. SafeRehearse assesses the learner against these from the conversation once the ' +
+        'role-play ends; you do not record anything. Play the scene so the learner has a fair chance to show ' +
+        `each one, but never reveal them or hint at them:\n${criteria}`,
     );
   }
 
   return sections.join('\n\n');
 }
+
+/** What the agent says after the voice service reconnects mid-session. */
+export const RESUME_AFTER_RECONNECT =
+  'There was a brief technical interruption and you may have missed what the learner just said. ' +
+  'Apologise in one short sentence, ask them to repeat their last answer, then carry on from where you were, ' +
+  'in the same role.';
 
 /** What the agent says as it enters each mode. */
 export const MODE_OPENERS: Record<StageMode, string> = {

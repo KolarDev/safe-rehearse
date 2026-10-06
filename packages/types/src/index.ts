@@ -4,6 +4,23 @@ import { z } from 'zod';
 
 export { AttemptSnapshot };
 
+// Visual lesson events reach the browser from the agent over LiveKit, not from the API.
+export {
+  LESSON_TOPIC,
+  LessonEvent,
+  LessonMessage,
+  type LessonTextVariant,
+  type ShowScenarioEvent,
+  type ShowTextEvent,
+} from '@safe-rehearse/agent-contracts';
+
+// Voice-service health notices, also sent by the agent over LiveKit.
+export {
+  SESSION_NOTICE_TOPIC,
+  SessionNotice,
+  type SessionNoticeKind,
+} from '@safe-rehearse/agent-contracts';
+
 export const StageSummary = z.object({
   id: z.string(),
   title: z.string(),

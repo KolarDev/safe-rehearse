@@ -2,12 +2,15 @@ packages:
   - apps/*
   - packages/*
 
+ignoredBuiltDependencies:
+  - '@nestjs/core'
+  - msgpackr-extract
+
 onlyBuiltDependencies:
   - '@prisma/engines'
   - prisma
   - sharp
   - unrs-resolver
 
-ignoredBuiltDependencies:
-  - '@nestjs/core'
-  - msgpackr-extract
+patchedDependencies:
+  '@livekit/agents-plugin-google@1.9.1': patches/@livekit__agents-plugin-google@1.9.1.patch

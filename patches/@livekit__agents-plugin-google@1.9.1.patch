@@ -1,0 +1,56 @@
+diff --git a/dist/realtime/realtime_api.js b/dist/realtime/realtime_api.js
+index 922fec1f283828c1b8bed189146db58f66461d34..2dba7d1eeac36add4b8ca710e02333cb6106654b 100644
+--- a/dist/realtime/realtime_api.js
++++ b/dist/realtime/realtime_api.js
+@@ -31,6 +31,12 @@ const OUTPUT_AUDIO_SAMPLE_RATE = 24e3;
+ const OUTPUT_AUDIO_CHANNELS = 1;
+ const LK_GOOGLE_DEBUG = Number(process.env.LK_GOOGLE_DEBUG ?? 0);
+ const WS_CLOSE_NORMAL = 1e3;
++// [safe-rehearse patch] Close codes that mean "the server had a transient
++// problem", not "your request is wrong": 1006 abnormal closure, 1011 internal
++// error, 1013 try again later. On these, reconnect (replaying the conversation)
++// instead of ending the whole AgentSession, a few times per session at most.
++const TRANSIENT_CLOSE_CODES = /* @__PURE__ */ new Set([1006, 1011, 1013]);
++const MAX_TRANSIENT_RESTARTS = 2;
+ const KNOWN_VERTEXAI_MODELS = /* @__PURE__ */ new Set(["gemini-live-2.5-flash-native-audio"]);
+ const KNOWN_GEMINI_API_MODELS = /* @__PURE__ */ new Set([
+   "gemini-3.8-live",
+@@ -191,6 +197,7 @@ class RealtimeSession extends llm.RealtimeSession {
+   inUserActivity = false;
+   sessionLock = new Mutex();
+   numRetries = 0;
++  transientRestarts = 0;
+   hasReceivedAudioInput = false;
+   pendingInterruptText = false;
+   earlyCompletionPending = false;
+@@ -612,6 +619,30 @@ class RealtimeSession extends llm.RealtimeSession {
+               }
+             },
+             onclose: (event) => {
++              if (event.code !== WS_CLOSE_NORMAL && TRANSIENT_CLOSE_CODES.has(event.code) && !this.#closed && this.transientRestarts < MAX_TRANSIENT_RESTARTS) {
++                this.transientRestarts++;
++                this.#logger.warn(
++                  { code: event.code, reason: event.reason, restart: this.transientRestarts, maxRestarts: MAX_TRANSIENT_RESTARTS },
++                  "Gemini Live closed with a transient error; reconnecting"
++                );
++                // A fresh session with the replayed conversation is more reliable
++                // than resuming the server-side session that just failed.
++                this.sessionResumptionHandle = void 0;
++                this.markRestartNeeded();
++                this.markCurrentGenerationDone();
++                this.emitError(
++                  new APIStatusError({
++                    message: event.reason || `WebSocket closed with code ${event.code}`,
++                    options: {
++                      statusCode: event.code,
++                      retryable: true,
++                      body: { reason: event.reason, code: event.code, truncated: false }
++                    }
++                  }),
++                  true
++                );
++                return;
++              }
+               if (event.code !== WS_CLOSE_NORMAL) {
+                 const isTruncated = event.reason && event.reason.length >= 120;
+                 const truncationNote = isTruncated ? " (message may be truncated - check model name and API permissions)" : "";
